@@ -15,6 +15,7 @@ AGENT_PASSWORD = ""
 DEFAULT_PORT = 1080
 DEFAULT_ADDRESS = "127.0.0.1"
 POLLING_INTERVAL = 100
+POST_SIZE = 4096
 RETRY_INTERVAL = 100
 USER_AGENT = "pivotnacci/0.0.1"
 RETRIES = 50
@@ -104,6 +105,14 @@ def parse_args():
         help="Interval to poll the agents (for recv operations)",
         type=int,
         default=POLLING_INTERVAL
+    )
+
+    parser.add_argument(
+        "--post-size",
+        metavar="bytes",
+        help="Max bytes to post (for send operations)",
+        type=int,
+        default=POST_SIZE
     )
 
     parser.add_argument(
@@ -218,7 +227,8 @@ def main():
         args.addr,
         args.port,
         AgentConnectionDispatcher(agent_broker, agent_session),
-        args.polling_interval
+        args.polling_interval,
+        args.post_size
     )
 
 
@@ -226,14 +236,16 @@ def execute_server(
         addr,
         port,
         agent_connection_dispatcher,
-        agent_polling_interval
+        agent_polling_interval,
+        agent_post_size
 ):
     logger.info("Socks server => %s:%s", addr, port)
     socks_server = SocksServer(
         addr,
         port,
         agent_connection_dispatcher,
-        agent_polling_interval
+        agent_polling_interval,
+        agent_post_size
     )
     try:
         server_thread = Thread(target=socks_server.serve_forever)

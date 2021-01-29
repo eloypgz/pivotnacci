@@ -24,12 +24,14 @@ class SocksServer(socketserver.ThreadingTCPServer):
             listen_addr,
             listen_port,
             agent_connection_dispatcher,
-            agent_polling_interval
+            agent_polling_interval,
+            agent_post_size
     ):
         connection_handler = SocksConnectionHandler
         connection_handler.init_handler(
             agent_connection_dispatcher,
-            agent_polling_interval
+            agent_polling_interval,
+            agent_post_size
         )
 
         super(SocksServer, self).__init__(
@@ -44,11 +46,13 @@ class SocksConnectionHandler(socketserver.BaseRequestHandler):
     """
     _socks_negotiator = None
     _agent_polling_interval = 0.1
+    _agent_post_size = 4096
 
     @classmethod
-    def init_handler(cls, agent_connection_dispatcher, agent_polling_interval):
+    def init_handler(cls, agent_connection_dispatcher, agent_polling_interval, agent_post_size):
         cls._socks_negotiator = SocksNegotiator(agent_connection_dispatcher)
         cls._agent_polling_interval = agent_polling_interval
+        cls._agent_post_size = agent_post_size
 
     def handle(self):
         logger.info(
@@ -62,7 +66,8 @@ class SocksConnectionHandler(socketserver.BaseRequestHandler):
             client_handler = ClientHandler(
                 sock,
                 broker,
-                self._agent_polling_interval
+                self._agent_polling_interval,
+                self._agent_post_size
             )
             client_handler.handle()
         except SocksError as ex:
@@ -81,10 +86,10 @@ class ClientHandler(object):
     """Retransmit the connection data from the client to agent and viceversa
     """
 
-    def __init__(self, sock, agent_session, polling_interval):
+    def __init__(self, sock, agent_session, polling_interval, post_size):
         self._client_sock = sock
         self._agent_session = agent_session
-        self._read_size = 4096
+        self._read_size = post_size
         self._continue_loop = True
         self._agent_polling_interval = polling_interval
 
