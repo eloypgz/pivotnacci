@@ -1,5 +1,5 @@
 from construct import Struct, Switch, Error, PascalString, \
-    Byte, Const, Int16ub, Int32ub, Array, StreamError, this
+    Byte, Const, Int16ub, Int32ub, Array, StreamError, this, Bytes
 
 from .error import SocksError
 import ipaddress
@@ -26,7 +26,7 @@ class AuthRequest(object):
             req = cls.SOCKS_5_AUTH_REQUEST.parse_stream(stream)
             return cls(methods=req.methods)
         except StreamError:
-            raise SocksError("Error parsing socks 5 request")
+            raise SocksError("Error parsing socks 5 auth request")
 
     def __repr__(self):
         return repr(self.__dict__)
@@ -62,7 +62,14 @@ class AuthResponse(object):
 
 IP_4_Address = Int32ub
 IP_6_Address = Array(16, Byte)
-DOMAIN_NAME = PascalString(Byte, "ascii")
+
+# cannot use String types like PascalString since it uses the
+# .tell() function of the stream and that raises an exception
+# in socket streams
+DOMAIN_NAME_Address = Struct(
+    "name_len" / Byte,
+    "bytes" / Bytes(this.name_len),
+)
 
 
 class Atyp(object):
@@ -92,7 +99,7 @@ class Request(object):
         "atyp" / Byte,
         "dstaddr" / Switch(this.atyp, {
             Atyp.IP_V4: IP_4_Address,
-            Atyp.DOMAIN_NAME: DOMAIN_NAME,
+            Atyp.DOMAIN_NAME: DOMAIN_NAME_Address,
             Atyp.IP_V6: IP_6_Address
         }, default=Error),
         "dstport" / Int16ub,
@@ -108,11 +115,15 @@ class Request(object):
     @classmethod
     def parse_stream(cls, stream):
         try:
+            # Error parsing domain names since the stream cannot use .tell()
+            # because it is a socket
             req = cls.REQUEST.parse_stream(stream)
 
             addr = req.dstaddr
             if req.atyp == Atyp.IP_V4 or req.atyp == Atyp.IP_V6:
                 addr = ipaddress.ip_address(addr)
+            else:
+                addr = addr.bytes.decode()
 
             return cls(
                 cmd=req.cmd,
@@ -120,8 +131,8 @@ class Request(object):
                 dstaddr=addr,
                 dstport=req.dstport
             )
-        except StreamError:
-            raise SocksError("Error parsing socks 5 request")
+        except StreamError as e:
+            raise SocksError("Error parsing socks 5 request: {} -- {}".format(e, e.path))
 
 
 class Reply(object):
@@ -149,7 +160,7 @@ class Response(object):
         "atyp" / Byte,
         "bndaddr" / Switch(this.atyp, {
             Atyp.IP_V4: IP_4_Address,
-            Atyp.DOMAIN_NAME: DOMAIN_NAME,
+            Atyp.DOMAIN_NAME: DOMAIN_NAME_Address,
             Atyp.IP_V6: IP_6_Address
         }, default=Error),
         "bndport" / Int16ub,
@@ -165,6 +176,8 @@ class Response(object):
         addr = self.bndaddr
         if self.atyp == Atyp.IP_V4 or self.atyp == Atyp.IP_V6:
             addr = int(addr)
+        else:
+            addr = dict(name_len=len(addr), bytes=addr.encode())
 
         return self.RESPONSE.build(dict(
             rep=self.rep,
